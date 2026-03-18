@@ -1,32 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { getReports, saveReport, deleteReport, getCategories, saveCategory, deleteCategory } from '../services/storage';
+import { supabase } from '../services/supabase';
 import { MarketReport } from '../types';
 import { motion } from 'framer-motion';
 
 const Admin: React.FC = () => {
-  // Initialize auth state from localStorage to persist session
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('market_radar_admin_session') === 'true';
-  });
-  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+
   // Login State
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
 
   // Data State
   const [reports, setReports] = useState<MarketReport[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  
+  const [loading, setLoading] = useState(false);
+
   // Form State (Report)
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<string>('');
   const [file, setFile] = useState<File | null>(null);
-  const [currentFileData, setCurrentFileData] = useState<string | null>(null);
-  
+  const [currentFileUrl, setCurrentFileUrl] = useState<string | null>(null);
+
   // Form State (Category)
   const [newCategory, setNewCategory] = useState('');
+
+  // Listen to Supabase auth state
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAuthenticated(!!session);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -34,26 +49,24 @@ const Admin: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  const loadData = () => {
-    setReports(getReports());
-    const cats = getCategories();
+  const loadData = async () => {
+    const [reps, cats] = await Promise.all([getReports(), getCategories()]);
+    setReports(reps);
     setCategories(cats);
     if (!category && cats.length > 0) setCategory(cats[0]);
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === 'admin' && password === 'admin') {
-      setIsAuthenticated(true);
-      localStorage.setItem('market_radar_admin_session', 'true');
-    } else {
-      alert('Identifiants incorrects');
+    setLoginError('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setLoginError(error.message);
     }
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('market_radar_admin_session');
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   // --- REPORT MANAGEMENT ---
@@ -63,7 +76,7 @@ const Admin: React.FC = () => {
     setTitle(report.title);
     setDescription(report.description);
     setCategory(report.category);
-    setCurrentFileData(report.fileData);
+    setCurrentFileUrl(report.fileUrl);
     setFile(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -73,7 +86,7 @@ const Admin: React.FC = () => {
     setTitle('');
     setDescription('');
     setFile(null);
-    setCurrentFileData(null);
+    setCurrentFileUrl(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,64 +97,70 @@ const Admin: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
 
-    let fileData = currentFileData;
+    try {
+      const reportToSave: MarketReport = {
+        id: editingId || Date.now().toString(),
+        title,
+        description,
+        category,
+        uploadDate: editingId ? (reports.find(r => r.id === editingId)?.uploadDate || new Date().toISOString()) : new Date().toISOString(),
+        fileUrl: currentFileUrl,
+      };
 
-    if (file) {
-      fileData = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
+      await saveReport(reportToSave, file || undefined);
+      await loadData();
+      handleCancelEdit();
+    } catch (err) {
+      console.error(err);
+      alert('Erreur lors de la sauvegarde.');
+    } finally {
+      setLoading(false);
     }
-
-    const reportToSave: MarketReport = {
-      id: editingId || Date.now().toString(),
-      title,
-      description,
-      category,
-      uploadDate: editingId ? (reports.find(r => r.id === editingId)?.uploadDate || new Date().toISOString()) : new Date().toISOString(),
-      fileData,
-    };
-
-    saveReport(reportToSave);
-    loadData();
-    handleCancelEdit();
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Supprimer définitivement ce rapport ?')) {
-      deleteReport(id);
-      loadData();
+      await deleteReport(id);
+      await loadData();
       if (editingId === id) handleCancelEdit();
     }
   };
 
   // --- CATEGORY MANAGEMENT ---
 
-  const handleAddCategory = (e: React.FormEvent) => {
+  const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newCategory.trim()) {
-      saveCategory(newCategory.trim());
+      await saveCategory(newCategory.trim());
       setNewCategory('');
-      loadData();
+      await loadData();
     }
   };
 
-  const handleDeleteCategory = (cat: string, e: React.MouseEvent) => {
+  const handleDeleteCategory = async (cat: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (confirm(`Supprimer le thème "${cat}" ?`)) {
-      deleteCategory(cat);
-      loadData();
+      await deleteCategory(cat);
+      await loadData();
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center z-10 relative">
+        <p className="text-gray-500 font-mono text-sm animate-pulse">CHARGEMENT...</p>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center z-10 relative">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="glass-card p-8 rounded-2xl w-full max-w-md border border-gray-800 bg-black/80"
@@ -152,11 +171,11 @@ const Admin: React.FC = () => {
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-               <label className="block text-xs font-mono text-gray-500 mb-1">UTILISATEUR</label>
+               <label className="block text-xs font-mono text-gray-500 mb-1">EMAIL</label>
                <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-radar-accent focus:outline-none transition-colors"
                />
             </div>
@@ -169,6 +188,9 @@ const Admin: React.FC = () => {
                 className="w-full bg-black/50 border border-gray-700 rounded p-3 text-white focus:border-radar-accent focus:outline-none transition-colors"
                />
             </div>
+            {loginError && (
+              <p className="text-red-500 text-xs font-mono">{loginError}</p>
+            )}
             <button
               type="submit"
               className="w-full bg-radar-accent text-black font-bold py-3 rounded hover:bg-white transition-colors mt-4 uppercase tracking-wider"
@@ -184,10 +206,10 @@ const Admin: React.FC = () => {
   return (
     <div className="min-h-screen pt-24 pb-12 px-4 relative z-10">
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
+
         {/* LEFT COLUMN: EDITOR & SETTINGS (4 cols) */}
         <div className="lg:col-span-4 space-y-8">
-          
+
           {/* EDITOR PANEL */}
           <div className="glass-card p-6 rounded-xl border border-gray-800 sticky top-24">
             <div className="flex justify-between items-center mb-6">
@@ -213,7 +235,7 @@ const Admin: React.FC = () => {
                   className="w-full bg-black/40 border border-gray-700 rounded p-3 text-white focus:border-radar-accent focus:outline-none"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs font-mono text-gray-500 mb-1">THÈME</label>
                 <select
@@ -238,16 +260,17 @@ const Admin: React.FC = () => {
                 </label>
                 <input
                   type="file" accept="application/pdf" onChange={handleFileChange}
-                  required={!editingId && !file} 
+                  required={!editingId && !file}
                   className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-radar-accent/10 file:text-radar-accent hover:file:bg-radar-accent/20"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-radar-accent text-black font-bold py-3 rounded hover:bg-white transition-colors flex items-center justify-center gap-2 uppercase tracking-wider"
+                disabled={loading}
+                className="w-full bg-radar-accent text-black font-bold py-3 rounded hover:bg-white transition-colors flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50"
               >
-                {editingId ? 'METTRE À JOUR' : 'PUBLIER'}
+                {loading ? 'ENVOI EN COURS...' : editingId ? 'METTRE À JOUR' : 'PUBLIER'}
               </button>
             </form>
           </div>
@@ -255,9 +278,9 @@ const Admin: React.FC = () => {
           {/* CATEGORY MANAGER PANEL */}
           <div className="glass-card p-6 rounded-xl border border-gray-800">
              <h3 className="text-sm font-bold text-white mb-4 font-mono tracking-widest border-b border-gray-800 pb-2">GESTION DES THÈMES</h3>
-             
+
              <form onSubmit={handleAddCategory} className="flex gap-2 mb-4">
-                <input 
+                <input
                   type="text" placeholder="Nouveau thème..." value={newCategory} onChange={e => setNewCategory(e.target.value)}
                   className="flex-1 bg-black/40 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:border-radar-accent focus:outline-none"
                 />
@@ -268,9 +291,9 @@ const Admin: React.FC = () => {
                 {categories.map(cat => (
                   <div key={cat} className="flex items-center gap-1 pl-3 pr-1 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-gray-300">
                      {cat}
-                     <button 
+                     <button
                        type="button"
-                       onClick={(e) => handleDeleteCategory(cat, e)} 
+                       onClick={(e) => handleDeleteCategory(cat, e)}
                        className="p-1 hover:text-radar-accent text-gray-500 rounded-full hover:bg-white/10 transition-colors"
                      >
                         ×
@@ -287,11 +310,11 @@ const Admin: React.FC = () => {
              <h2 className="text-xl font-bold text-white">DOCUMENTS ACTIFS ({reports.length})</h2>
              <p className="text-xs text-gray-500">Cliquez sur un rapport pour l'éditer</p>
           </div>
-          
+
           <div className="grid gap-4">
             {reports.map((report) => (
-              <div 
-                key={report.id} 
+              <div
+                key={report.id}
                 onClick={() => handleEditClick(report)}
                 className={`glass-card p-5 rounded-lg border flex justify-between items-center group cursor-pointer transition-all ${editingId === report.id ? 'border-radar-accent bg-radar-accent/5' : 'border-gray-800 hover:border-gray-600'}`}
               >

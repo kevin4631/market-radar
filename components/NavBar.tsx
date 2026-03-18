@@ -1,7 +1,21 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const NavBar: React.FC = () => {
+  const navigate = useNavigate();
+
+  const handleScrollToPdfs = () => {
+    const grid = document.getElementById('market-grid');
+    if (grid) {
+      grid.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      navigate('/');
+      setTimeout(() => {
+        document.getElementById('market-grid')?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
   return (
     <div className="fixed top-6 left-0 w-full z-50 flex justify-center pointer-events-none px-4">
       <nav className="pointer-events-auto bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-full px-6 py-3 flex items-center gap-8 shadow-2xl shadow-black/50">
@@ -16,16 +30,16 @@ const NavBar: React.FC = () => {
             MARKET<span className="text-radar-accent font-light">RADAR</span>
           </span>
         </Link>
-        
+
         <div className="h-4 w-[1px] bg-white/10 hidden md:block"></div>
 
         <div className="flex items-center gap-1">
-          <Link 
-            to="/" 
+          <button
+            onClick={handleScrollToPdfs}
             className="px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-300 bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.3)] hover:scale-105"
           >
             ACCÉDER AUX PDFS
-          </Link>
+          </button>
         </div>
       </nav>
     </div>

@@ -1,96 +1,129 @@
+import { supabase } from './supabase';
 import { MarketReport, DEFAULT_CATEGORIES } from '../types';
-
-const REPORTS_KEY = 'market_radar_reports';
-const CATEGORIES_KEY = 'market_radar_categories';
 
 // --- REPORTS ---
 
-export const getReports = (): MarketReport[] => {
-  try {
-    const data = localStorage.getItem(REPORTS_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (e) {
-    console.error("Failed to load reports", e);
+export const getReports = async (): Promise<MarketReport[]> => {
+  const { data, error } = await supabase
+    .from('reports')
+    .select('*')
+    .order('upload_date', { ascending: false });
+
+  if (error) {
+    console.error('Failed to load reports', error);
     return [];
   }
+
+  return data.map(row => ({
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    category: row.category,
+    uploadDate: row.upload_date,
+    fileUrl: row.file_url,
+    aiSummary: row.ai_summary,
+  }));
 };
 
-export const saveReport = (report: MarketReport): void => {
-  const reports = getReports();
-  // Check if update or create
-  const index = reports.findIndex(r => r.id === report.id);
-  
-  if (index >= 0) {
-    // Update existing
-    reports[index] = report;
-  } else {
-    // Create new
-    reports.unshift(report);
+export const saveReport = async (report: MarketReport, file?: File): Promise<void> => {
+  let fileUrl = report.fileUrl;
+
+  // Upload PDF to storage if a new file is provided
+  if (file) {
+    const filePath = `${report.id}/${Date.now()}.pdf`;
+    const { error: uploadError } = await supabase.storage
+      .from('pdfs')
+      .upload(filePath, file, { contentType: 'application/pdf', upsert: true });
+
+    if (uploadError) {
+      console.error('Failed to upload PDF', uploadError);
+      throw uploadError;
+    }
+
+    const { data: urlData } = supabase.storage.from('pdfs').getPublicUrl(filePath);
+    fileUrl = urlData.publicUrl;
   }
-  
-  localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
+
+  const row = {
+    id: report.id,
+    title: report.title,
+    description: report.description,
+    category: report.category,
+    upload_date: report.uploadDate,
+    file_url: fileUrl,
+    ai_summary: report.aiSummary ?? null,
+  };
+
+  const { error } = await supabase
+    .from('reports')
+    .upsert(row, { onConflict: 'id' });
+
+  if (error) {
+    console.error('Failed to save report', error);
+    throw error;
+  }
 };
 
-export const deleteReport = (id: string): void => {
-  const reports = getReports();
-  const filtered = reports.filter(r => r.id !== id);
-  localStorage.setItem(REPORTS_KEY, JSON.stringify(filtered));
+export const deleteReport = async (id: string): Promise<void> => {
+  // Delete associated files from storage
+  const { data: files } = await supabase.storage.from('pdfs').list(id);
+  if (files && files.length > 0) {
+    const paths = files.map(f => `${id}/${f.name}`);
+    await supabase.storage.from('pdfs').remove(paths);
+  }
+
+  const { error } = await supabase.from('reports').delete().eq('id', id);
+  if (error) {
+    console.error('Failed to delete report', error);
+    throw error;
+  }
 };
 
 // --- CATEGORIES ---
 
-export const getCategories = (): string[] => {
-  try {
-    const data = localStorage.getItem(CATEGORIES_KEY);
-    return data ? JSON.parse(data) : DEFAULT_CATEGORIES;
-  } catch (e) {
+export const getCategories = async (): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('name')
+    .order('name');
+
+  if (error) {
+    console.error('Failed to load categories', error);
     return DEFAULT_CATEGORIES;
   }
+
+  return data.length > 0 ? data.map(row => row.name) : DEFAULT_CATEGORIES;
 };
 
-export const saveCategory = (category: string): void => {
-  const categories = getCategories();
-  if (!categories.includes(category)) {
-    categories.push(category);
-    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+export const saveCategory = async (category: string): Promise<void> => {
+  const { error } = await supabase
+    .from('categories')
+    .insert({ name: category });
+
+  if (error && error.code !== '23505') { // ignore unique violation
+    console.error('Failed to save category', error);
+    throw error;
   }
 };
 
-export const deleteCategory = (category: string): void => {
-  let categories = getCategories();
-  categories = categories.filter(c => c !== category);
-  localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+export const deleteCategory = async (category: string): Promise<void> => {
+  const { error } = await supabase
+    .from('categories')
+    .delete()
+    .eq('name', category);
+
+  if (error) {
+    console.error('Failed to delete category', error);
+    throw error;
+  }
 };
 
-// Seed some initial data if empty
-export const seedInitialData = () => {
-  // Seed Reports
-  if (getReports().length === 0) {
-    const mockReports: MarketReport[] = [
-      {
-        id: '1',
-        title: 'Recap Tech Hebdo #42',
-        description: 'Analyse des sorties IA de la semaine, impact sur le développement web et nouvelles stacks émergentes.',
-        category: 'Tech',
-        uploadDate: new Date().toISOString(),
-        fileData: null,
-        aiSummary: 'Focus sur les LLMs locaux et frameworks JS.'
-      },
-      {
-        id: '2',
-        title: 'Tendances Design UI 2024',
-        description: 'Pourquoi le Bento Grid domine tout et comment l\'intégrer dans vos projets étudiants.',
-        category: 'Design',
-        uploadDate: new Date(Date.now() - 86400000).toISOString(),
-        fileData: null,
-        aiSummary: 'Minimalisme fonctionnel et grilles modulaires.'
-      }
-    ];
-    localStorage.setItem(REPORTS_KEY, JSON.stringify(mockReports));
-  }
-
-  // Seed Categories if not exist
-  if (!localStorage.getItem(CATEGORIES_KEY)) {
-    localStorage.setItem(CATEGORIES_KEY, JSON.stringify(DEFAULT_CATEGORIES));
+// Seed initial data if tables are empty
+export const seedInitialData = async (): Promise<void> => {
+  // Seed categories
+  const { data: existingCats } = await supabase.from('categories').select('name').limit(1);
+  if (!existingCats || existingCats.length === 0) {
+    const rows = DEFAULT_CATEGORIES.map(name => ({ name }));
+    await supabase.from('categories').insert(rows);
   }
 };

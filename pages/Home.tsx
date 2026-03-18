@@ -11,13 +11,17 @@ const Home: React.FC = () => {
   const [selectedReport, setSelectedReport] = useState<MarketReport | null>(null);
 
   useEffect(() => {
-    seedInitialData();
-    setReports(getReports());
-    setCategories(['All', ...getCategories()]);
+    const load = async () => {
+      await seedInitialData();
+      const [reps, cats] = await Promise.all([getReports(), getCategories()]);
+      setReports(reps);
+      setCategories(['All', ...cats]);
+    };
+    load();
   }, []);
 
-  const filteredReports = filter === 'All' 
-    ? reports 
+  const filteredReports = filter === 'All'
+    ? reports
     : reports.filter(r => r.category === filter);
 
   const scrollToGrid = () => {
@@ -26,10 +30,10 @@ const Home: React.FC = () => {
 
   return (
     <div className="min-h-screen pt-32 pb-20 relative z-10 overflow-hidden">
-      
+
       {/* --- HERO RADAR --- */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[140vw] h-[100vh] -z-10 pointer-events-none flex justify-center overflow-hidden">
-        <div 
+        <div
            className="w-[100vw] h-[100vw] md:w-[60vw] md:h-[60vw] max-w-[800px] max-h-[800px] rounded-full animate-[spin_15s_linear_infinite] opacity-30 mix-blend-screen mt-[-10%]"
            style={{
              background: 'conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(255, 49, 49, 0.5) 360deg)'
@@ -50,9 +54,9 @@ const Home: React.FC = () => {
             MARKET<br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-radar-accent via-white to-[#ffe6e6]">RADAR</span>
           </h1>
-          
+
           <div className="flex justify-center mb-12">
-             <button 
+             <button
                onClick={scrollToGrid}
                className="group relative px-8 py-4 bg-white text-black font-bold text-sm rounded-full overflow-hidden transition-all hover:scale-105 hover:shadow-[0_0_30px_rgba(255,255,255,0.3)]"
              >
@@ -68,7 +72,7 @@ const Home: React.FC = () => {
 
       {/* --- PROJECT PRESENTATION (MANIFESTO) --- */}
       <div className="max-w-5xl mx-auto px-6 mb-32 relative">
-         <motion.div 
+         <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -79,11 +83,11 @@ const Home: React.FC = () => {
                <span className="w-8 h-[1px] bg-radar-accent"></span>
                Identité du Projet
             </h3>
-            
+
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-10 leading-tight">
                 Décrypter <span className="text-gray-600">l'actu</span>, garder l'avance.
             </h2>
-            
+
             <div className="grid md:grid-cols-2 gap-12 text-gray-400 text-lg font-light leading-relaxed">
                <p>
                   <span className="text-white font-medium">Chaque semaine</span>, un PDF qui condense les tendances tech, marketing, design, business pour les étudiants Ynov. On filtre le bruit, on synthétise ce qui compte, on livre un format court et actionnable.
@@ -101,7 +105,7 @@ const Home: React.FC = () => {
             <h2 className="text-3xl font-bold text-white mb-2">DERNIÈRES PARUTIONS</h2>
             <p className="text-gray-500 font-mono text-xs">VOTRE DOSE D'INSIGHTS HEBDOMADAIRE</p>
           </div>
-          
+
           {/* Filter Tabs */}
           <div className="mt-6 md:mt-0 p-1 bg-white/5 backdrop-blur-xl border border-white/5 rounded-full inline-flex gap-1 overflow-x-auto max-w-full">
             {categories.map((cat) => (
@@ -124,15 +128,15 @@ const Home: React.FC = () => {
           <AnimatePresence mode="popLayout">
             {filteredReports.length > 0 ? (
               filteredReports.map((report, index) => (
-                <PDFCard 
-                  key={report.id} 
-                  report={report} 
+                <PDFCard
+                  key={report.id}
+                  report={report}
                   index={index}
                   onOpen={setSelectedReport}
                 />
               ))
             ) : (
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="col-span-full py-32 flex flex-col items-center justify-center border border-dashed border-white/10 rounded-3xl bg-white/5"
@@ -179,13 +183,13 @@ const Home: React.FC = () => {
                      </div>
                    </div>
                 </div>
-                
+
                 <div className="flex gap-4">
                     {/* NEW TAB BUTTON */}
-                    {selectedReport.fileData && (
-                        <a 
-                            href={selectedReport.fileData} 
-                            target="_blank" 
+                    {selectedReport.fileUrl && (
+                        <a
+                            href={selectedReport.fileUrl}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 text-xs font-bold text-white transition-colors border border-white/10"
                         >
@@ -194,7 +198,7 @@ const Home: React.FC = () => {
                         </a>
                     )}
 
-                    <button 
+                    <button
                     onClick={() => setSelectedReport(null)}
                     className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
                     >
@@ -202,29 +206,29 @@ const Home: React.FC = () => {
                     </button>
                 </div>
               </div>
-              
+
               {/* Viewer Content */}
               <div className="flex-1 bg-[#050505] flex flex-col items-center justify-center p-8 text-center relative overflow-hidden group">
                  {/* Grid Background in Viewer */}
-                 <div className="absolute inset-0 opacity-10 pointer-events-none" 
-                      style={{ 
-                          backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', 
-                          backgroundSize: '40px 40px' 
+                 <div className="absolute inset-0 opacity-10 pointer-events-none"
+                      style={{
+                          backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
+                          backgroundSize: '40px 40px'
                       }}>
                  </div>
-                 
-                 {selectedReport.fileData ? (
-                   <iframe src={selectedReport.fileData} className="w-full h-full border-none z-10" title="PDF Preview" />
+
+                 {selectedReport.fileUrl ? (
+                   <iframe src={selectedReport.fileUrl} className="w-full h-full border-none z-10" title="PDF Preview" />
                  ) : (
                     <div className="relative z-10 max-w-lg">
                         <div className="w-24 h-24 mx-auto mb-8 rounded-3xl bg-gradient-to-br from-gray-800 to-black border border-white/10 flex items-center justify-center shadow-2xl relative">
                            <div className="absolute inset-0 bg-radar-accent/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                            <svg className="w-10 h-10 text-gray-400 relative z-10" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H8l4-4 4 4h-3v4h-2z"/></svg>
                         </div>
-                        
+
                         <h3 className="text-2xl font-bold text-white mb-3">Protocole de Chiffrement Actif</h3>
                         <p className="text-gray-500 mb-10 text-sm leading-relaxed">
-                          Ce document est protégé par un chiffrement de niveau militaire. 
+                          Ce document est protégé par un chiffrement de niveau militaire.
                           <br/>La prévisualisation est désactivée.
                         </p>
                     </div>
