@@ -1,0 +1,17 @@
+# Supabase project config — minimal pour les Edge Functions
+# Voir https://supabase.com/docs/guides/functions/auth
+
+project_id = "market-radar"
+
+# `subscribe` est appelée depuis le formulaire public : pas d'auth Supabase requise
+# (validation manuelle de l'email dans la fonction)
+[functions.subscribe]
+verify_jwt = false
+
+# `unsubscribe` est appelée via lien email (GET) : pas d'auth requise
+[functions.unsubscribe]
+verify_jwt = false
+
+# `send-newsletter` exige un user JWT (admin connecté)
+[functions.send-newsletter]
+verify_jwt = true

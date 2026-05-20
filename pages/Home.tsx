@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getReports, seedInitialData, getCategories } from '../services/storage';
 import { MarketReport } from '../types';
 import PDFCard from '../components/PDFCard';
+import NewsletterSection from '../components/NewsletterSection';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const Home: React.FC = () => {
@@ -150,6 +151,9 @@ const Home: React.FC = () => {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* --- NEWSLETTER SECTION --- */}
+      <NewsletterSection />
 
       {/* PDF Viewer Modal */}
       <AnimatePresence>

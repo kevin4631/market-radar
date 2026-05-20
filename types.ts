@@ -8,4 +8,10 @@ export interface MarketReport {
   aiSummary?: string;
 }
 
+export interface Subscriber {
+  id: string;
+  email: string;
+  subscribedAt: string;
+}
+
 export const DEFAULT_CATEGORIES = ['Tech', 'Marketing', 'Design', 'Business'];

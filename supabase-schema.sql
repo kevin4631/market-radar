@@ -42,3 +42,27 @@ insert into storage.buckets (id, name, public) values ('pdfs', 'pdfs', true);
 create policy "Public upload pdfs" on storage.objects for insert with check (bucket_id = 'pdfs');
 create policy "Public read pdfs" on storage.objects for select using (bucket_id = 'pdfs');
 create policy "Public delete pdfs" on storage.objects for delete using (bucket_id = 'pdfs');
+
+-- ===========================================
+-- 7. Newsletter : table des abonnés
+-- ===========================================
+create table subscribers (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  subscribed_at timestamptz not null default now(),
+  unsubscribe_token text not null default replace(gen_random_uuid()::text, '-', ''),
+  consent_given boolean not null default true,
+  consent_at timestamptz not null default now()
+);
+
+create index subscribers_unsubscribe_token_idx on subscribers(unsubscribe_token);
+
+alter table subscribers enable row level security;
+
+-- Lecture/suppression réservée aux utilisateurs authentifiés (admin)
+-- L'inscription publique passe par une Edge Function (service_role), donc pas de policy "insert public" ici
+create policy "Auth read subscribers" on subscribers
+  for select using (auth.role() = 'authenticated');
+
+create policy "Auth delete subscribers" on subscribers
+  for delete using (auth.role() = 'authenticated');

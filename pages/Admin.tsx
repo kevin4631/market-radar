@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { getReports, saveReport, deleteReport, getCategories, saveCategory, deleteCategory } from '../services/storage';
+import { getSubscribers, deleteSubscriber, notifySubscribers } from '../services/newsletter';
 import { supabase } from '../services/supabase';
-import { MarketReport } from '../types';
+import { MarketReport, Subscriber } from '../types';
 import { motion } from 'framer-motion';
 
 const Admin: React.FC = () => {
@@ -16,7 +17,9 @@ const Admin: React.FC = () => {
   // Data State
   const [reports, setReports] = useState<MarketReport[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [loading, setLoading] = useState(false);
+  const [notifyingId, setNotifyingId] = useState<string | null>(null);
 
   // Form State (Report)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -50,9 +53,10 @@ const Admin: React.FC = () => {
   }, [isAuthenticated]);
 
   const loadData = async () => {
-    const [reps, cats] = await Promise.all([getReports(), getCategories()]);
+    const [reps, cats, subs] = await Promise.all([getReports(), getCategories(), getSubscribers()]);
     setReports(reps);
     setCategories(cats);
+    setSubscribers(subs);
     if (!category && cats.length > 0) setCategory(cats[0]);
   };
 
@@ -146,6 +150,35 @@ const Admin: React.FC = () => {
     if (confirm(`Supprimer le thème "${cat}" ?`)) {
       await deleteCategory(cat);
       await loadData();
+    }
+  };
+
+  // --- SUBSCRIBERS MANAGEMENT ---
+
+  const handleDeleteSubscriber = async (id: string, email: string) => {
+    if (confirm(`Désinscrire ${email} ?`)) {
+      await deleteSubscriber(id);
+      await loadData();
+    }
+  };
+
+  const handleNotifySubscribers = async (report: MarketReport, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (subscribers.length === 0) {
+      alert('Aucun abonné à notifier pour le moment.');
+      return;
+    }
+    if (!confirm(`Envoyer une notification à ${subscribers.length} abonné(s) pour "${report.title}" ?`)) return;
+
+    setNotifyingId(report.id);
+    try {
+      const { sent } = await notifySubscribers(report);
+      alert(`Newsletter envoyée à ${sent} abonné(s).`);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Échec de l'envoi.");
+    } finally {
+      setNotifyingId(null);
     }
   };
 
@@ -302,6 +335,41 @@ const Admin: React.FC = () => {
                 ))}
              </div>
           </div>
+
+          {/* SUBSCRIBERS PANEL */}
+          <div className="glass-card p-6 rounded-xl border border-gray-800">
+             <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+                <h3 className="text-sm font-bold text-white font-mono tracking-widest">ABONNÉS NEWSLETTER</h3>
+                <span className="text-xs font-mono text-radar-accent bg-radar-accent/10 px-2 py-1 rounded">
+                  {subscribers.length}
+                </span>
+             </div>
+
+             {subscribers.length === 0 ? (
+                <p className="text-xs text-gray-500 font-mono py-4 text-center">Aucun abonné pour le moment.</p>
+             ) : (
+                <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+                  {subscribers.map(sub => (
+                    <div key={sub.id} className="flex items-center justify-between gap-2 py-2 px-3 rounded bg-white/5 hover:bg-white/10 transition-colors group">
+                       <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white truncate">{sub.email}</p>
+                          <p className="text-[10px] font-mono text-gray-500">
+                            {new Date(sub.subscribedAt).toLocaleDateString()} {new Date(sub.subscribedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                       </div>
+                       <button
+                         type="button"
+                         onClick={() => handleDeleteSubscriber(sub.id, sub.email)}
+                         className="opacity-0 group-hover:opacity-100 p-1.5 hover:text-red-500 text-gray-500 rounded hover:bg-red-500/10 transition-all"
+                         title="Désinscrire"
+                       >
+                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                       </button>
+                    </div>
+                  ))}
+                </div>
+             )}
+          </div>
         </div>
 
         {/* RIGHT COLUMN: LIST (8 cols) */}
@@ -331,13 +399,24 @@ const Admin: React.FC = () => {
                       <span>DATE: {new Date(report.uploadDate).toLocaleDateString()}</span>
                    </div>
                 </div>
-                <button
-                  onClick={(e) => handleDelete(report.id, e)}
-                  className="ml-4 p-3 rounded-full hover:bg-red-500/20 text-gray-600 hover:text-red-500 transition-colors"
-                  title="Supprimer"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
+                <div className="flex items-center gap-1 ml-4">
+                  <button
+                    onClick={(e) => handleNotifySubscribers(report, e)}
+                    disabled={notifyingId === report.id}
+                    className="px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider bg-radar-accent/10 text-radar-accent hover:bg-radar-accent hover:text-black transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-wait"
+                    title="Envoyer une notification aux abonnés"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                    {notifyingId === report.id ? 'Envoi...' : 'Notifier'}
+                  </button>
+                  <button
+                    onClick={(e) => handleDelete(report.id, e)}
+                    className="p-3 rounded-full hover:bg-red-500/20 text-gray-600 hover:text-red-500 transition-colors"
+                    title="Supprimer"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
