@@ -27,3 +27,6 @@ dist-ssr
 node_modules
 .env
 .env.local
+
+# Supabase CLI temporary files
+supabase/.temp/
